@@ -83,9 +83,9 @@ func TestWizardSelectionBackReviewAndSuccess(t *testing.T) {
 func TestWizardInputValidationAndTextShortcuts(t *testing.T) {
 	m := newTestModel()
 	press(m, tea.KeyEnter, "")
-	typeText(m, "qBad Name")
-	if m.nav.current != createProject || !strings.HasPrefix(m.wizard.name.Value(), "q") {
-		t.Fatal("q should be text while editing a field")
+	typeText(m, "qjkBad Name")
+	if m.nav.current != createProject || !strings.HasPrefix(m.wizard.name.Value(), "qjk") {
+		t.Fatal("q, j, and k should be text while editing a field")
 	}
 	press(m, tea.KeyEnter, "")
 	typeText(m, filepath.Join(t.TempDir(), "demo"))
