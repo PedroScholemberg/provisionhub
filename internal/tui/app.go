@@ -69,7 +69,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.help.SetWidth(max(1, min(msg.Width-6, 48)))
+		m.help.SetWidth(max(1, min(msg.Width-4, 54)-6))
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, keys.quit):
@@ -95,14 +95,15 @@ func (m *Model) View() tea.View {
 		return view
 	}
 
-	contentWidth := min(width-6, 48)
+	frameWidth := min(width-4, 54)
+	contentWidth := frameWidth - 6
 	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7DD3FC"))
 	selected := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7DD3FC"))
 
 	lines := []string{
-		title.Render(strings.ToUpper(m.info.Name)),
-		muted.Render(m.info.Tagline),
+		lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, title.Render(strings.ToUpper(m.info.Name))),
+		lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, muted.Render(m.info.Tagline)),
 		"",
 		strings.Repeat("─", contentWidth),
 		"",
@@ -131,7 +132,7 @@ func (m *Model) View() tea.View {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#64748B")).
 		Padding(1, 2).
-		Width(contentWidth).
+		Width(frameWidth).
 		Render(strings.Join(lines, "\n"))
 	if lipgloss.Width(frame) > width || lipgloss.Height(frame) > height {
 		view := tea.NewView(m.compactView(width, height))

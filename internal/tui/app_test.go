@@ -30,6 +30,9 @@ func TestInitialView(t *testing.T) {
 			t.Errorf("initial view missing %q", part)
 		}
 	}
+	if got := strings.Count(view.Content, strings.Repeat("─", 48)); got < 2 {
+		t.Fatalf("home dividers wrapped or disappeared: found %d full-width rules", got)
+	}
 }
 
 func TestNavigationAndBack(t *testing.T) {
