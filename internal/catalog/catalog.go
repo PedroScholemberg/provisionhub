@@ -14,10 +14,11 @@ const (
 )
 
 type Technology struct {
-	ID          string
-	Name        string
-	Category    Category
-	Description string
+	ID               string
+	Name             string
+	Category         Category
+	Description      string
+	IncompatibleWith []string // Optional explicit technology IDs; empty for built-ins.
 }
 
 // Catalog is an immutable snapshot of available technology definitions.
@@ -29,7 +30,7 @@ type Catalog struct {
 func New(entries []Technology) (Catalog, error) {
 	copyOfEntries := slices.Clone(entries)
 	byID := make(map[string]Technology, len(entries))
-	for _, entry := range copyOfEntries {
+	for i, entry := range copyOfEntries {
 		if entry.ID == "" || entry.Name == "" || entry.Description == "" {
 			return Catalog{}, fmt.Errorf("technology %q must have an ID, name, and description", entry.ID)
 		}
@@ -39,6 +40,8 @@ func New(entries []Technology) (Catalog, error) {
 		if _, exists := byID[entry.ID]; exists {
 			return Catalog{}, fmt.Errorf("duplicate technology ID %q", entry.ID)
 		}
+		entry.IncompatibleWith = slices.Clone(entry.IncompatibleWith)
+		copyOfEntries[i] = entry
 		byID[entry.ID] = entry
 	}
 	slices.SortFunc(copyOfEntries, func(a, b Technology) int {
@@ -86,6 +89,7 @@ func (c Catalog) List(category Category) []Technology {
 	var result []Technology
 	for _, entry := range c.entries {
 		if entry.Category == category {
+			entry.IncompatibleWith = slices.Clone(entry.IncompatibleWith)
 			result = append(result, entry)
 		}
 	}
@@ -94,6 +98,7 @@ func (c Catalog) List(category Category) []Technology {
 
 func (c Catalog) Lookup(id string) (Technology, bool) {
 	entry, ok := c.byID[id]
+	entry.IncompatibleWith = slices.Clone(entry.IncompatibleWith)
 	return entry, ok
 }
 
@@ -106,4 +111,23 @@ func (c Catalog) ValidateSelection(category Category, id string) (Technology, er
 		return Technology{}, fmt.Errorf("technology %q belongs to %s, not %s", id, entry.Category, category)
 	}
 	return entry, nil
+}
+
+// ValidateCombination rejects only explicitly declared incompatibilities.
+func (c Catalog) ValidateCombination(ids ...string) error {
+	selected := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if _, ok := c.byID[id]; !ok {
+			return fmt.Errorf("unknown technology %q", id)
+		}
+		selected[id] = true
+	}
+	for _, id := range ids {
+		for _, incompatible := range c.byID[id].IncompatibleWith {
+			if selected[incompatible] {
+				return fmt.Errorf("technologies %q and %q are incompatible", id, incompatible)
+			}
+		}
+	}
+	return nil
 }

@@ -123,3 +123,18 @@ func TestTechnologiesAreSharedWithService(t *testing.T) {
 		t.Fatal("unexpected display names")
 	}
 }
+
+func TestServiceRejectsExplicitCompatibilityConflict(t *testing.T) {
+	c, err := catalog.New([]catalog.Technology{
+		{ID: "backend-a", Name: "Backend A", Category: catalog.Backend, Description: "Backend", IncompatibleWith: []string{"database-b"}},
+		{ID: "database-b", Name: "Database B", Category: catalog.Database, Description: "Database"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := ProjectService{catalog: c}
+	input := CreateProjectInput{Name: "demo", Destination: filepath.Join(t.TempDir(), "demo"), Backend: "backend-a", Database: "database-b"}
+	if _, _, err := service.ValidateInput(input); err == nil || !strings.Contains(err.Error(), "incompatible") {
+		t.Fatalf("compatibility error = %v", err)
+	}
+}

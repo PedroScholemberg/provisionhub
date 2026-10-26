@@ -80,6 +80,9 @@ func (s ProjectService) ValidateInput(input CreateProjectInput) (project.Manifes
 		}
 		manifest.Spec.Database = &project.TechnologySelection{Technology: input.Database}
 	}
+	if err := s.catalog.ValidateCombination(selectionIDs(manifest)...); err != nil {
+		return project.Manifest{}, "", err
+	}
 	return manifest, path, nil
 }
 
@@ -114,5 +117,19 @@ func (s ProjectService) LoadProject(path string) (project.Manifest, error) {
 			return project.Manifest{}, err
 		}
 	}
+	if err := s.catalog.ValidateCombination(selectionIDs(manifest)...); err != nil {
+		return project.Manifest{}, err
+	}
 	return manifest, nil
+}
+
+func selectionIDs(manifest project.Manifest) []string {
+	ids := []string{manifest.Spec.Backend.Technology}
+	if manifest.Spec.Frontend != nil {
+		ids = append(ids, manifest.Spec.Frontend.Technology)
+	}
+	if manifest.Spec.Database != nil {
+		ids = append(ids, manifest.Spec.Database.Technology)
+	}
+	return ids
 }

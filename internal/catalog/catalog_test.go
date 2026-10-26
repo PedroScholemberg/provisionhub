@@ -19,7 +19,7 @@ func TestBuiltinCatalog(t *testing.T) {
 		for _, entry := range c.List(test.category) {
 			got = append(got, entry.ID)
 			found, ok := c.Lookup(entry.ID)
-			if !ok || found != entry {
+			if !ok || !reflect.DeepEqual(found, entry) {
 				t.Errorf("lookup of %q returned %+v, %v", entry.ID, found, ok)
 			}
 		}
@@ -60,5 +60,31 @@ func TestNewRejectsDuplicateIDsAndCopiesInput(t *testing.T) {
 	}
 	if _, err := New([]Technology{entries[0], entries[0]}); err == nil {
 		t.Fatal("duplicate IDs should be rejected")
+	}
+}
+
+func TestExplicitCompatibilityMetadata(t *testing.T) {
+	entries := []Technology{
+		{ID: "backend-a", Name: "Backend A", Category: Backend, Description: "Backend", IncompatibleWith: []string{"database-b"}},
+		{ID: "database-b", Name: "Database B", Category: Database, Description: "Database"},
+	}
+	c, err := New(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries[0].IncompatibleWith[0] = "changed"
+	if err := c.ValidateCombination("backend-a", "database-b"); err == nil {
+		t.Fatal("explicitly incompatible technologies were accepted")
+	}
+	if err := c.ValidateCombination("backend-a"); err != nil {
+		t.Fatal(err)
+	}
+	copyOfEntry, _ := c.Lookup("backend-a")
+	copyOfEntry.IncompatibleWith[0] = "changed"
+	if err := c.ValidateCombination("backend-a", "database-b"); err == nil {
+		t.Fatal("lookup exposed mutable catalog metadata")
+	}
+	if err := Builtin().ValidateCombination("nestjs", "nextjs", "postgresql"); err != nil {
+		t.Fatalf("built-in combinations should be valid: %v", err)
 	}
 }
