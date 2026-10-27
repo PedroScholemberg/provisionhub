@@ -15,7 +15,7 @@ func Build(manifest project.Manifest, technologies catalog.Catalog) Plan {
 	}
 	if err := manifest.Validate(); err != nil {
 		plan.Diagnostics = append(plan.Diagnostics, Diagnostic{Severity: SeverityError, Code: InvalidManifest, Message: err.Error()})
-		return plan
+		return finalizePlan(plan)
 	}
 	type selection struct {
 		category catalog.Category
@@ -42,11 +42,11 @@ func Build(manifest project.Manifest, technologies catalog.Catalog) Plan {
 		plan.Technologies = append(plan.Technologies, Technology{ID: technology.ID, Name: technology.Name, Category: technology.Category})
 	}
 	if len(plan.Diagnostics) != 0 {
-		return plan
+		return finalizePlan(plan)
 	}
 	if err := technologies.ValidateCombination(ids...); err != nil {
 		plan.Diagnostics = append(plan.Diagnostics, Diagnostic{Severity: SeverityError, Code: IncompatibleTechnologies, Message: err.Error()})
-		return plan
+		return finalizePlan(plan)
 	}
 	plan.Status = StatusPlanned
 	for _, technology := range plan.Technologies {
@@ -74,5 +74,5 @@ func Build(manifest project.Manifest, technologies catalog.Catalog) Plan {
 			OperationID: operation.ID, Technology: technology.ID,
 		})
 	}
-	return plan
+	return finalizePlan(plan)
 }
