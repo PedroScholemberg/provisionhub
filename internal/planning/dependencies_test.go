@@ -2,17 +2,22 @@ package planning
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
 func TestOrderOperationsUsesDependenciesAndStableIDs(t *testing.T) {
 	input := []Operation{
-		{ID: "z", Dependencies: []string{"a", "m", "a"}},
+		{ID: "z", Dependencies: []string{"m", "a", "m"}, TargetPaths: []string{"z-target", "a-target", "z-target"}},
 		{ID: "m", Dependencies: []string{"a"}},
 		{ID: "b"},
 		{ID: "a"},
 	}
 	before := append([]Operation(nil), input...)
+	for i := range before {
+		before[i].Dependencies = slices.Clone(input[i].Dependencies)
+		before[i].TargetPaths = slices.Clone(input[i].TargetPaths)
+	}
 	ordered, diagnostics := orderOperations(input)
 	var ids []string
 	for _, operation := range ordered {
@@ -24,6 +29,9 @@ func TestOrderOperationsUsesDependenciesAndStableIDs(t *testing.T) {
 	if !reflect.DeepEqual(ordered[3].Dependencies, []string{"a", "m"}) {
 		t.Fatalf("dependencies not canonicalized: %v", ordered[3].Dependencies)
 	}
+	if !reflect.DeepEqual(ordered[3].TargetPaths, []string{"a-target", "z-target"}) {
+		t.Fatalf("target paths not canonicalized: %v", ordered[3].TargetPaths)
+	}
 	if !reflect.DeepEqual(input, before) {
 		t.Fatal("ordering mutated the input")
 	}
@@ -33,6 +41,11 @@ func TestOrderOperationsUsesDependenciesAndStableIDs(t *testing.T) {
 	again, _ := orderOperations(input)
 	if !reflect.DeepEqual(ordered, again) {
 		t.Fatal("input order affected the result")
+	}
+	ordered[3].Dependencies[0] = "changed"
+	ordered[3].TargetPaths[0] = "changed"
+	if !reflect.DeepEqual(input[len(input)-1], before[0]) {
+		t.Fatal("returned operations share caller-owned collection storage")
 	}
 }
 

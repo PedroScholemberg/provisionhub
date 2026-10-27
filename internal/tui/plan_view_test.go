@@ -56,8 +56,15 @@ func TestPlanPreviewResizesWithinTerminalCells(t *testing.T) {
 	reviewWizard(t, m, filepath.Join(t.TempDir(), "not-created"))
 	press(m, 'p', "p")
 	m.wizard.plan.Technologies[0].Name = strings.Repeat("界é", 40)
+	for range 75 {
+		press(m, tea.KeyDown, "")
+	}
 	for _, size := range []tea.WindowSizeMsg{{Width: 120, Height: 40}, {Width: 80, Height: 24}, {Width: 40, Height: 17}, {Width: 20, Height: 5}, {Width: 1, Height: 1}, {Width: 2, Height: 2}, {Width: 80, Height: 24}} {
 		m.Update(size)
+		last := max(0, len(m.wizard.planLines(size.Width))-planPageHeight(size.Height))
+		if m.wizard.planOffset < 0 || m.wizard.planOffset > last {
+			t.Fatalf("resize left offset %d outside [0,%d]", m.wizard.planOffset, last)
+		}
 		for range 4 {
 			view := m.View()
 			if !view.AltScreen || lipgloss.Width(view.Content) > size.Width || lipgloss.Height(view.Content) > size.Height {
@@ -65,6 +72,12 @@ func TestPlanPreviewResizesWithinTerminalCells(t *testing.T) {
 			}
 			press(m, 'j', "j")
 		}
+	}
+	for range len(m.wizard.planLines(80)) {
+		press(m, tea.KeyUp, "")
+	}
+	if !strings.Contains(m.View().Content, "Status: planned") {
+		t.Fatal("could not reach plan status after bottom-scroll/resize")
 	}
 	press(m, tea.KeyEscape, "")
 	if m.wizard.preview || m.wizard.step != reviewStep {

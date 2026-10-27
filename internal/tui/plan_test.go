@@ -48,8 +48,8 @@ func TestWizardPlanPreviewPreservesSelectionsAndSaveBehavior(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(shared, m.wizard.plan) {
 		t.Fatalf("preview bypasses shared planning: %v", err)
 	}
-	for _, key := range []rune{tea.KeyEscape, tea.KeyEnter} {
-		if cmd := press(m, key, ""); cmd != nil {
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEscape}, {Code: tea.KeyEnter}, {Code: 'p', Text: "p"}} {
+		if _, cmd := m.Update(key); cmd != nil {
 			t.Fatal("leaving preview must not save")
 		}
 		if m.wizard.preview || m.wizard.step != reviewStep || m.wizard.selected != selected {
@@ -85,5 +85,27 @@ func TestWizardPreviewShortcutRemainsTextWhileEditing(t *testing.T) {
 	}
 	if !strings.Contains(m.View().Content, "pqjk") {
 		t.Fatal("text input not rendered")
+	}
+}
+
+func TestPlanPreviewQuitKeysNeverSave(t *testing.T) {
+	for _, key := range []tea.KeyPressMsg{{Code: 'q', Text: "q"}, {Code: 'c', Mod: tea.ModCtrl}} {
+		m := newTestModel()
+		destination := filepath.Join(t.TempDir(), "not-created")
+		reviewWizard(t, m, destination)
+		press(m, 'p', "p")
+		_, cmd := m.Update(key)
+		if cmd == nil {
+			t.Fatalf("%q did not quit preview", key.String())
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Fatalf("%q started a non-quit operation", key.String())
+		}
+		if m.wizard.saving {
+			t.Fatal("quitting preview started a save")
+		}
+		if _, err := os.Stat(destination); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("quit created destination: %v", err)
+		}
 	}
 }

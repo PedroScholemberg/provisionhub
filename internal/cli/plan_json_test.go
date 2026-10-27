@@ -34,10 +34,18 @@ func TestProjectPlanJSONIsStructuredAndDeterministic(t *testing.T) {
 	if err := os.WriteFile(equivalent, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	text, err := executeCLI("project", "plan", "--file", path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for range 10 {
 		again, err := executeCLI("project", "plan", "--file", equivalent, "--output", "json")
 		if err != nil || first != again {
 			t.Fatalf("non-deterministic JSON: %v\n%s", err, again)
+		}
+		again, err = executeCLI("project", "plan", "--file", equivalent, "--output", "text")
+		if err != nil || text != again {
+			t.Fatalf("non-deterministic text: %v\n%s", err, again)
 		}
 	}
 }
