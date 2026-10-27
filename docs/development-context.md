@@ -4,7 +4,7 @@
 
 ProvisionHub is an open-source developer provisioning tool maintained by ProvisionLabs, primarily for individual developers and small teams. It is TUI-first, local-first, and intended to be plugin-driven. It should help users compose compatible technologies into one application rather than concatenate unrelated templates.
 
-This context was checked against the implementation at commit `78da52d`. It is an onboarding map, not a replacement for the linked specifications or a claim about a release or remote CI result. Recheck the source, Git state, and accepted ADRs before continuing development, and update this snapshot when behavior changes. Repository content takes precedence over previous conversations and agent memory.
+This context was checked against the implementation through commit `93d9202`, including the Generation Planning Engine. It is an onboarding map, not a replacement for the linked specifications or a claim about a release or remote CI result. Recheck the source, Git state, and accepted ADRs before continuing development, and update this snapshot when behavior changes. Repository content takes precedence over previous conversations and agent memory.
 
 Start with the [README](../README.md), [product overview](overview.md), [architecture](architecture/architecture.md), and [development guide](development.md).
 
@@ -12,7 +12,7 @@ Start with the [README](../README.md), [product overview](overview.md), [archite
 
 The intended journey is to create or open a local project, choose frameworks, databases, services, and infrastructure providers, resolve composition constraints, review a generation plan, and explicitly approve execution. Plugins should supply integration-specific templates and operations; the core should keep the resulting application coherent.
 
-Only new-project configuration and manifest persistence are currently exposed end to end. Source generation, execution, infrastructure provisioning, and interactive management of existing projects remain future work. ProvisionHub is not a hosted control plane, CI/CD service, secrets manager, or Kubernetes replacement. Optional external integrations must not turn local use into a mandatory network or server dependency. See the [planned user journey](overview.md#planned-user-journey).
+New-project configuration, manifest persistence, and read-only conceptual plan review are exposed end to end. The CLI previews saved manifests as text/JSON, and the TUI previews unsaved Review selections. Source generation, execution, infrastructure provisioning, and interactive management of existing projects remain future work. ProvisionHub is not a hosted control plane, CI/CD service, secrets manager, or Kubernetes replacement. Optional external integrations must not turn local use into a mandatory network or server dependency. See the [planned user journey](overview.md#planned-user-journey).
 
 ## 3. ProvisionLabs repository ecosystem
 
@@ -44,7 +44,7 @@ Commit `54b79d8` updated the architecture guides, marked the older ADRs amended/
 
 ## 6. Current architecture and package responsibilities
 
-The current path is `cmd/provisionhub` -> CLI or TUI -> application services -> catalog and project packages. The interfaces share `application.ProjectService`; application, catalog, and project code do not depend on terminal widgets or Cobra.
+The current path is `cmd/provisionhub` -> CLI or TUI -> application services -> planning, catalog, and project packages. The interfaces share `application.ProjectService`; application and domain code do not depend on terminal widgets or Cobra. Planning is pure: file loading is coordinated by the application service and no provider or execution API exists.
 
 | Existing path | Responsibility |
 | --- | --- |
@@ -53,31 +53,36 @@ The current path is `cmd/provisionhub` -> CLI or TUI -> application services -> 
 | [internal/tui](../internal/tui/) | Bubble Tea model/update/view, navigation, wizard input, rendering, and save-result presentation |
 | [internal/application/info.go](../internal/application/info.go) | Product metadata shared by both interfaces |
 | [internal/application/project.go](../internal/application/project.go) | Validate project input and selections, expose catalog choices, coordinate creation, and load/validate manifests |
+| [internal/application/planning.go](../internal/application/planning.go) | Read a saved manifest or accept one in memory, coordinate shared planning, and propagate diagnostics/errors |
 | [internal/catalog/catalog.go](../internal/catalog/catalog.go) | Built-in technology definitions, deterministic listing, ID/category checks, and explicit incompatibility checks |
+| [internal/planning](../internal/planning/) | Structured conceptual plans, existing validator reuse, technology resolution, deterministic operation dependency ordering, and diagnostics without I/O |
 | [internal/project/manifest.go](../internal/project/manifest.go) | Versioned desired-configuration schema, portable name validation, and strict YAML serialization/parsing |
 | [internal/project/storage.go](../internal/project/storage.go) | Destination checks, no-overwrite local persistence, and manifest file loading |
 | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | Formatting, vet, tests, and build on Windows, Linux, and macOS |
 
 The stack is Go 1.26.1 as declared in [go.mod](../go.mod), Cobra, Bubble Tea v2, Bubbles v2, Lip Gloss v2, and YAML v3. Resolve exact dependency versions from the module rather than this summary.
 
-Core planning, plugin management, tool configuration, and registry are target boundaries, not existing packages. The [project structure guide](architecture/project-structure.md) distinguishes implemented locations from planned ones. Add packages only with real implementation; keep provider-specific integrations out of the application/core and avoid speculative public APIs or empty scaffolding.
+Conceptual planning now exists in `internal/planning`; broader plugin capability resolution, execution, plugin management, tool configuration, and registry remain future boundaries. The [project structure guide](architecture/project-structure.md) distinguishes implemented locations from planned ones. Add packages only with real implementation; keep provider-specific integrations out of the application/core and avoid speculative public APIs or empty scaffolding. The [planning specification](generation-planning.md) owns the model, status/diagnostic semantics, dependency rules, and JSON shape.
 
 ## 7. Implemented features and commands
 
 | Entry point | Verified behavior |
 | --- | --- |
 | `provisionhub` | Open the home TUI with navigation and compact rendering for small terminals |
-| Create Project in the TUI | Six steps: project information, backend, optional frontend, optional database, review, and save result |
+| Create Project in the TUI | Six steps: project information, backend, optional frontend, optional database, review, and save result; optional `p` plan preview from Review before saving |
 | `provisionhub project init --name my-app --path ./my-app --backend go` | Validate configuration, create the destination if necessary, save `provisionhub.yaml`, and print its path; does not generate application source |
+| `provisionhub project plan --file ./my-app/provisionhub.yaml [--output json]` | Read/validate a saved manifest and preview conceptual capabilities, support, dependencies, diagnostics, and execution availability without writes or commands |
 | `provisionhub technologies list` | Print built-in technology category, ID, and display name |
 | `provisionhub version` | Print shared application metadata; the inspected source reports `ProvisionHub 0.1.0-dev` |
 | `provisionhub --help` | Show command help without opening a terminal session |
 
 `project init` requires `--name`, `--path`, and `--backend`. `--frontend` and `--database` may be omitted or set to `none`. Cobra also exposes standard help and shell-completion commands; these are not additional project workflows.
 
-The wizard preserves selections when going back, displays validation/persistence errors, and shows success only after saving. In text fields, `q`, `j`, and `k` are text rather than global navigation shortcuts. Tests drive the model without an interactive terminal. See the [development guide](development.md#current-interface) for shortcuts and build/run commands.
+The wizard preserves selections when going back, displays validation/persistence errors, and shows save success only after persistence. From Review, `p` opens a scrollable plan; Enter/Esc/`p` returns without saving, while Enter on Review still saves only the manifest. The optional pre-save preview preserves the existing six-step save workflow. In text fields, `p`, `q`, `j`, and `k` are text rather than global shortcuts. Tests drive the model without an interactive terminal. See the [development guide](development.md#current-interface) for shortcuts and build/run commands.
 
 `ProjectService.LoadProject` loads and validates an existing manifest programmatically. There is no CLI project-open command, and Open Existing Project, Plugin Marketplace, and Settings in the TUI remain explanatory placeholders. No settings are persisted.
+
+`PlanProject(path)` and `PlanManifest(manifest)` share the planning domain for CLI and TUI. Plan construction succeeds with `status: planned` even though every operation is `unavailable` and `executable` is always `false`. Valid unsupported previews exit `0`; argument, file, schema, technology/conflict, graph, or output errors exit `1`. JSON loading/validation failures contain an `invalid` plan and error diagnostics on stdout, with an executable error on stderr; argument/format failures can precede JSON output. See [planning diagnostics and exit codes](generation-planning.md).
 
 ## 8. Project manifest format and persistence
 
@@ -121,8 +126,10 @@ These milestones are verified in the current tree and local Git history; they do
 | Interactive configuration wizard | `362bc66` |
 | Explicit incompatibility validation and manifest/workflow documentation | `ea03ccf`, `85b46af` |
 | Text-input shortcut regression coverage and portable file-ancestor errors | `ceb5576`, `78da52d` |
+| Validated conceptual plan domain, stable IDs, missing-provider diagnostics, and deterministic graph ordering/error handling | `3cfb4e7`, `4d2235a` |
+| Shared read-only application planning, non-interactive text/JSON CLI preview, and optional pre-save TUI preview | `fdac8f6`, `f96461b`, `93d9202` |
 
-Unit tests cover manifest round-trips and invalid inputs, catalog behavior, application services, CLI creation/listing, persistence conflicts and Unicode paths, and TUI navigation, resizing, save failures/retries, and input handling. The CI workflow defines native Windows/Linux/macOS validation; inspect actual CI results separately when making claims about a branch or PR.
+Unit tests cover manifest round-trips and invalid inputs, catalog behavior, application services, CLI creation/listing/planning, persistence conflicts and Unicode paths, and TUI navigation, resizing, save failures/retries, preview scrolling, and input handling. Planning tests also cover deterministic plans/JSON, graph ordering/errors/cycles, explicit conflicts, structured diagnostics, and unchanged filesystem state. The CI workflow defines native Windows/Linux/macOS validation; inspect actual CI results separately when making claims about a branch or PR.
 
 ## 11. Relevant ADRs and architectural decisions
 
@@ -138,13 +145,12 @@ ADR-0004 records the UI libraries as candidates at decision time; [go.mod](../go
 
 ## 12. Current limitations and historical-report discrepancies
 
-- A project can be configured, not generated or provisioned. The Create Project wizard and `project init` only persist desired configuration.
+- A project can be configured and conceptually planned, not generated or provisioned. The Create Project wizard and `project init` persist desired configuration only; preview actions never save or apply a plan.
 - Compatibility validation is limited to IDs/categories and declared conflicts. There is no general resolver, and the built-in entries declare no conflicts.
 - Existing manifests can be loaded through the application service, but no existing-project management UI/CLI is implemented.
 - Plugin contract/runtime, discovery, installation, trust model, official integrations, registry, and marketplace access are absent. Runtime language, packaging, and protocol are undecided; gRPC is not required.
 - Docker, CI/CD configuration generation, authentication integrations, and infrastructure provisioning are not available. The repository's own CI workflow is not a user-project CI generator.
-- There is no planner, executor, progress engine, persisted execution state, settings persistence, or remote execution. Cancellation, retries, rollback, idempotency, approval, and credential contracts for future execution still need design.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) describes an "initial Go CLI and navigable TUI shell"; that wording understates the implemented wizard, catalog, and manifest services. Its boundary and validation guidance remains applicable; the README, manifest specification, and source describe the fuller current state.
+- The planner has no supported generators/providers, concrete target paths, or execution engine. It reports missing-provider warnings and never marks a plan executable. Operation dependency ordering is not a general plugin capability resolver. There is no progress engine, persisted execution state, settings persistence, or remote execution. Cancellation, retries, rollback, idempotency, approval, and credential contracts for future execution still need design.
 - Target-architecture diagrams and historical ADR text are not evidence that conceptual packages or services exist. Cross-platform CI configuration and successful compilation alone are not proof of runtime behavior on every OS/filesystem.
 
 The historical feature report is otherwise supported by the implementation: CLI/TUI navigation, configuration, catalog selection, versioned manifests, local persistence, non-interactive initialization, listing, and focused unit tests exist. Preserve the qualifications above in future status reports.
@@ -153,28 +159,29 @@ The historical feature report is otherwise supported by the implementation: CLI/
 
 This is a recommended sequence consistent with the [README direction](../README.md#direction) and [target architecture](architecture/architecture.md), not an implemented or scheduled release plan:
 
-1. Generation Planning Engine: turn validated project intent into deterministic, inspectable proposed operations without executing them.
-2. Project generation/execution vertical slice: produce one coherent application with explicit filesystem/approval behavior and useful failure reporting.
-3. Plugin contract and runtime: extract proven integration needs into metadata, lifecycle, versioning, security, and operation contracts; choose transport only after a concrete composition scenario.
-4. Official plugin integrations and distribution: develop the separate official-plugins ecosystem and later optional registry/website marketplace access without requiring a network for local use.
-5. Broader integrations: Docker and CI/CD configuration, services, and infrastructure provisioning through the integration boundary.
-6. Existing-project management: expose loading/editing/replanning through TUI and CLI, with an explicit migration and state model.
+The Generation Planning Engine milestone is implemented for conceptual built-in capabilities; it deliberately leaves all operations unavailable. Recommended follow-up work:
+
+1. Project generation/execution vertical slice: support one concrete local application with explicit operation definitions, safe filesystem/approval behavior, and useful failure reporting.
+2. Plugin contract and runtime: extract proven integration needs into metadata, lifecycle, versioning, security, and operation contracts; choose transport only after a concrete composition scenario.
+3. Official plugin integrations and distribution: develop the separate official-plugins ecosystem and later optional registry/website marketplace access without requiring a network for local use.
+4. Broader integrations: Docker and CI/CD configuration, services, and infrastructure provisioning through the integration boundary.
+5. Existing-project management: expose loading/editing/replanning through TUI and CLI, with an explicit migration and state model.
 
 The later items may be refined or interleaved by future ADRs; no plugin protocol, package format, marketplace API, or execution reliability guarantee is settled here.
 
-## 14. Next recommended milestone: Generation Planning Engine
+## 14. Next recommended milestone: first supported local generation slice
 
-The manifest-configuration milestone is complete enough to feed a planner. The next increment should establish a small side-effect-free path from a validated manifest to a reviewable generation plan, not jump directly into a plugin marketplace or distributed runtime.
+Validated manifests now feed a deterministic, reviewable conceptual plan in both interfaces. The next increment should define and implement one real local generation capability, not jump directly into a plugin marketplace or distributed runtime. Planning must remain pure even when a separately authorized apply path is introduced.
 
 Recommended acceptance criteria for that future work:
 
-- Define a minimal plan model with stable operation identity/order, inputs, expected outputs, and risk/destructive-action information, following the [planned flow](architecture/architecture.md#planned-flow).
-- Reuse manifest/catalog validation and keep planning deterministic and independent of terminal components, provider APIs, and subprocess execution.
-- Report unsupported generation choices honestly; catalog membership alone must not imply that a generator exists.
-- Make the same planning use case available for TUI/CLI presentation and add focused tests for stable output, invalid/unsupported configurations, and absence of write/execute side effects.
-- Document plan semantics and unresolved approval/execution decisions before implementing side effects; add packages only when this implementation needs them.
+- Establish concrete operation definitions with truthful support, known targets, inputs/outputs, and risk information for one small backend scenario before advertising generation support.
+- Keep CLI/TUI coordinated through application use cases, reuse validation, and preserve deterministic planning without write/execute effects.
+- Separate preview from apply; define explicit approval, target/path containment, conflict/no-overwrite behavior, and actionable failure reporting before writing generated files.
+- Retain warnings for unsupported technology combinations and test the supported output plus rejection of unsafe destinations/conflicts. Do not infer generation support from catalog membership.
+- Document lifecycle/state implications and add packages only when the implementation needs them. Plugins, remote APIs, and infrastructure changes are not prerequisites for proving the first local slice.
 
-Do not implement execution, infrastructure operations, plugin loading, or a marketplace as incidental parts of that milestone. The exact CLI commands and package APIs require design; none are provided by this context document.
+The exact apply commands, operation/provider APIs, and reliability guarantees still require design. Broader execution, infrastructure operations, plugin loading, and marketplace work must remain independently scoped rather than incidental additions. No such functionality was implemented by the planning milestone.
 
 ## 15. Git workflow and validation requirements
 
